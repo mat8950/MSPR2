@@ -1,0 +1,154 @@
+# roles/common/handlers/main.yml
+---
+- name: restart ntp
+  service:
+    name: ntp
+    state: restarted
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+---
+
+# roles/security/handlers/main.yml
+---
+- name: restart fail2ban
+  service:
+    name: fail2ban
+    state: restarted
+
+- name: restart ssh
+  service:
+    name: ssh
+    state: restarted
+
+- name: restart auditd
+  service:
+    name: auditd
+    state: restarted
+
+- name: reload sysctl
+  sysctl:
+    reload: yes
+
+---
+
+# roles/zabbix-server/handlers/main.yml
+---
+- name: restart zabbix-server
+  service:
+    name: zabbix-server
+    state: restarted
+
+- name: restart zabbix-agent
+  service:
+    name: zabbix-agent
+    state: restarted
+
+- name: restart apache2
+  service:
+    name: apache2
+    state: restarted
+
+- name: restart mysql
+  service:
+    name: mariadb
+    state: restarted
+
+- name: reload apache2
+  service:
+    name: apache2
+    state: reloaded
+
+---
+
+# roles/gdpr-compliance/handlers/main.yml
+---
+- name: restart rsyslog
+  service:
+    name: rsyslog
+    state: restarted
+
+- name: restart logrotate
+  service:
+    name: logrotate
+    state: restarted
+  ignore_errors: yes
+
+- name: reload gdpr-config
+  debug:
+    msg: "Configuration RGPD rechargée"
+
+---
+
+# Fichier de variables par défaut
+# roles/zabbix-server/defaults/main.yml
+---
+zabbix_version: "6.4"
+zabbix_server_name: "Zabbix Server"
+mysql_root_password: "{{ vault_mysql_root_password | default('defaultpass123') }}"
+mysql_zabbix_password: "{{ vault_mysql_zabbix_password | default('defaultpass456') }}"
+zabbix_admin_password: "{{ vault_zabbix_admin_password | default('defaultpass789') }}"
+
+# Configuration SSL
+ssl_certificate_path: "/etc/ssl/certs/apache-selfsigned.crt"
+ssl_private_key_path: "/etc/ssl/private/apache-selfsigned.key"
+
+# Configuration PHP
+php_timezone: "Europe/Paris"
+php_max_execution_time: 300
+php_max_input_time: 300
+php_memory_limit: "128M"
+php_post_max_size: "16M"
+php_upload_max_filesize: "2M"
+
+---
+
+# roles/security/defaults/main.yml
+---
+# Configuration Fail2ban
+fail2ban_bantime: 3600
+fail2ban_findtime: 600
+fail2ban_maxretry: 5
+fail2ban_destemail: "{{ admin_email | default('admin@localhost') }}"
+
+# Configuration UFW
+ufw_enabled: true
+ufw_default_policy: "deny"
+
+# Configuration SSH
+ssh_port: 22
+ssh_permit_root_login: "yes"
+ssh_password_authentication: "no"
+ssh_pubkey_authentication: "yes"
+ssh_max_auth_tries: 3
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+
+# Configuration des mises à jour automatiques
+unattended_upgrades_enabled: true
+auto_reboot_if_required: false
+
+---
+
+# roles/gdpr-compliance/defaults/main.yml
+---
+# Configuration de rétention des données
+log_retention_days: 90
+audit_retention_days: 365
+backup_retention_days: 30
+
+# Configuration RGPD
+gdpr_enabled: true
+data_anonymization_enabled: true
+audit_log_enabled: true
+
+# Informations de contact RGPD
+gdpr_contact_email: "{{ gdpr_contact_email | default('dpo@localhost') }}"
+data_controller: "{{ company_name | default('Your Company') }}"
+data_processor: "{{ company_name | default('Your Company') }}"
+
+# Configuration de chiffrement
+log_encryption_enabled: false
+encryption_algorithm: "AES-256-CBC"

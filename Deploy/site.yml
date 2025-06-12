@@ -1,0 +1,57 @@
+---
+- name: Configuration complète Debian 12 avec Zabbix et conformité RGPD
+  hosts: debian_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # Configuration de base
+    timezone: "Europe/Paris"
+    locale: "fr_FR.UTF-8"
+    
+    # Configuration Zabbix
+    zabbix_version: "6.4"
+    zabbix_server_name: "Production Monitor"
+    zabbix_admin_password: "{{ vault_zabbix_admin_password }}"
+    
+    # Configuration RGPD
+    log_retention_days: 90
+    audit_log_enabled: true
+    
+    # Configuration réseau
+    fail2ban_enabled: true
+    ufw_enabled: true
+    
+  roles:
+    - common
+    - security
+    - zabbix-server
+    - gdpr-compliance
+    - monitoring-agents
+
+  post_tasks:
+    - name: Redémarrage si nécessaire
+      reboot:
+        reboot_timeout: 300
+      when: reboot_required is defined and reboot_required
+
+    - name: Vérification des services critiques
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - zabbix-server
+        - zabbix-agent
+        - apache2
+        - mysql
+        - fail2ban
+
+    - name: Affichage des informations de connexion
+      debug:
+        msg:
+          - "=== INSTALLATION TERMINÉE ==="
+          - "Interface Zabbix: https://{{ ansible_default_ipv4.address }}/zabbix"
+          - "Utilisateur: Admin"
+          - "Mot de passe: {{ zabbix_admin_password }}"
+          - "=== SÉCURITÉ RGPD ACTIVÉE ==="

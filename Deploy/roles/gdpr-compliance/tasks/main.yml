@@ -1,0 +1,148 @@
+---
+# roles/gdpr-compliance/tasks/main.yml
+- name: Installation des outils de conformité RGPD
+  apt:
+    name:
+      - logrotate
+      - rsyslog
+      - anacron
+      - postgresql-client
+    state: present
+
+- name: Configuration de la rétention des logs système
+  template:
+    src: rsyslog-gdpr.conf.j2
+    dest: /etc/rsyslog.d/49-gdpr.conf
+  notify: restart rsyslog
+
+- name: Configuration logrotate pour conformité RGPD
+  template:
+    src: gdpr-logrotate.j2
+    dest: /etc/logrotate.d/gdpr-compliance
+
+- name: Création du répertoire d'archivage RGPD
+  file:
+    path: /var/log/gdpr-archive
+    state: directory
+    owner: root
+    group: adm
+    mode: '0750'
+
+- name: Script de nettoyage automatique des données
+  template:
+    src: gdpr-cleanup.sh.j2
+    dest: /usr/local/bin/gdpr-cleanup.sh
+    mode: '0755'
+
+- name: Tâche cron pour le nettoyage RGPD
+  cron:
+    name: "GDPR Data Cleanup"
+    minute: "0"
+    hour: "2"
+    day: "*"
+    month: "*"
+    weekday: "0"
+    job: "/usr/local/bin/gdpr-cleanup.sh >> /var/log/gdpr-cleanup.log 2>&1"
+
+- name: Configuration anonymisation des logs Apache
+  lineinfile:
+    path: /etc/apache2/apache2.conf
+    regexp: '^LogFormat.*combined'
+    line: 'LogFormat "%h %l %u %t \"%r\" %>s %O \"%{Referer}i\" \"%{User-Agent}i\"" combined_anonymized'
+    backup: yes
+  notify: restart apache2
+
+- name: Script d'anonymisation des adresses IP
+  template:
+    src: anonymize-logs.sh.j2
+    dest: /usr/local/bin/anonymize-logs.sh
+    mode: '0755'
+
+- name: Tâche cron pour anonymisation quotidienne
+  cron:
+    name: "Log Anonymization"
+    minute: "30"
+    hour: "1"
+    job: "/usr/local/bin/anonymize-logs.sh"
+
+- name: Configuration de la politique de rétention Zabbix
+  template:
+    src: zabbix-gdpr-retention.sql.j2
+    dest: /tmp/zabbix-gdpr-retention.sql
+
+- name: Application de la politique de rétention Zabbix
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_password | default('zabbix123!') }}"
+    name: zabbix
+    state: import
+    target: /tmp/zabbix-gdpr-retention.sql
+
+- name: Script de purge des données Zabbix
+  template:
+    src: zabbix-data-cleanup.sh.j2
+    dest: /usr/local/bin/zabbix-data-cleanup.sh
+    mode: '0755'
+
+- name: Tâche cron pour purge des données Zabbix
+  cron:
+    name: "Zabbix GDPR Data Cleanup"
+    minute: "15"
+    hour: "3"
+    job: "/usr/local/bin/zabbix-data-cleanup.sh >> /var/log/zabbix-cleanup.log 2>&1"
+
+- name: Configuration de la bannière de consentement
+  template:
+    src: gdpr-banner.html.j2
+    dest: /var/www/html/gdpr-banner.html
+
+- name: Configuration du fichier de politique de confidentialité
+  template:
+    src: privacy-policy.html.j2
+    dest: /var/www/html/privacy-policy.html
+
+- name: Configuration des headers HTTP pour la protection de la vie privée
+  template:
+    src: privacy-headers.conf.j2
+    dest: /etc/apache2/conf-available/privacy-headers.conf
+  notify: restart apache2
+
+- name: Activation des headers de confidentialité
+  command: a2enconf privacy-headers
+  notify: restart apache2
+
+- name: Création du registre des traitements RGPD
+  template:
+    src: data-processing-registry.json.j2
+    dest: /etc/gdpr/data-processing-registry.json
+
+- name: Script de rapport de conformité RGPD
+  template:
+    src: gdpr-compliance-report.sh.j2
+    dest: /usr/local/bin/gdpr-compliance-report.sh
+    mode: '0755'
+
+- name: Tâche cron pour rapport mensuel de conformité
+  cron:
+    name: "GDPR Compliance Report"
+    minute: "0"
+    hour: "8"
+    day: "1"
+    job: "/usr/local/bin/gdpr-compliance-report.sh >> /var/log/gdpr-reports.log 2>&1"
+
+- name: Configuration du chiffrement des logs sensibles
+  template:
+    src: log-encryption.conf.j2
+    dest: /etc/rsyslog.d/50-log-encryption.conf
+  notify: restart rsyslog
+
+- name: Génération de la clé de chiffrement pour les logs
+  openssl_privatekey:
+    path: /etc/ssl/private/log-encryption.key
+    size: 2048
+    mode: '0600'
+
+- name: Documentation RGPD
+  template:
+    src: gdpr-documentation.md.j2
+    dest: /etc/gdpr/README.md

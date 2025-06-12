@@ -1,0 +1,158 @@
+---
+# roles/zabbix-server/tasks/main.yml
+- name: Installation de MySQL
+  apt:
+    name:
+      - mariadb-server
+      - mariadb-client
+      - python3-pymysql
+    state: present
+
+- name: Démarrage et activation de MySQL
+  service:
+    name: mariadb
+    state: started
+    enabled: yes
+
+- name: Sécurisation de MySQL
+  mysql_user:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: root
+    password: "{{ mysql_root_password | default('zabbix123!') }}"
+    state: present
+
+- name: Création de la base de données Zabbix
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_password | default('zabbix123!') }}"
+    name: zabbix
+    state: present
+    encoding: utf8
+    collation: utf8_bin
+
+- name: Création de l'utilisateur Zabbix MySQL
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_password | default('zabbix123!') }}"
+    name: zabbix
+    password: "{{ mysql_zabbix_password | default('zabbix456!') }}"
+    priv: 'zabbix.*:ALL'
+    state: present
+
+- name: Téléchargement du repository Zabbix
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/debian/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-4+debian12_all.deb"
+    dest: /tmp/zabbix-release.deb
+
+- name: Installation du repository Zabbix
+  apt:
+    deb: /tmp/zabbix-release.deb
+    state: present
+
+- name: Mise à jour du cache APT après ajout du repo Zabbix
+  apt:
+    update_cache: yes
+
+- name: Installation des paquets Zabbix
+  apt:
+    name:
+      - zabbix-server-mysql
+      - zabbix-frontend-php
+      - zabbix-apache-conf
+      - zabbix-sql-scripts
+      - zabbix-agent
+    state: present
+
+- name: Vérification si la base Zabbix est vide
+  mysql_query:
+    login_user: root
+    login_password: "{{ mysql_root_password | default('zabbix123!') }}"
+    login_db: zabbix
+    query: "SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'zabbix'"
+  register: zabbix_tables_count
+
+- name: Import du schéma initial Zabbix
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_password | default('zabbix123!') }}"
+    name: zabbix
+    state: import
+    target: /usr/share/zabbix-sql-scripts/mysql/server.sql.gz
+  when: zabbix_tables_count.query_result[0][0].count == 0
+
+- name: Configuration de Zabbix Server
+  template:
+    src: zabbix_server.conf.j2
+    dest: /etc/zabbix/zabbix_server.conf
+    backup: yes
+  notify: restart zabbix-server
+
+- name: Configuration de Zabbix Agent
+  template:
+    src: zabbix_agentd.conf.j2
+    dest: /etc/zabbix/zabbix_agentd.conf
+    backup: yes
+  notify: restart zabbix-agent
+
+- name: Configuration PHP pour Zabbix
+  template:
+    src: zabbix.conf.j2
+    dest: /etc/zabbix/apache.conf
+    backup: yes
+  notify: restart apache2
+
+- name: Configuration timezone PHP
+  lineinfile:
+    path: /etc/php/8.2/apache2/php.ini
+    regexp: '^;?date.timezone'
+    line: 'date.timezone = Europe/Paris'
+  notify: restart apache2
+
+- name: Activation des modules Apache
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - rewrite
+    - ssl
+  notify: restart apache2
+
+- name: Création du certificat SSL auto-signé
+  include_tasks: ssl_certificate.yml
+
+- name: Configuration du VHost Apache pour Zabbix
+  template:
+    src: zabbix-apache-ssl.conf.j2
+    dest: /etc/apache2/sites-available/zabbix-ssl.conf
+  notify: restart apache2
+
+- name: Activation du site Zabbix SSL
+  apache2_site:
+    name: zabbix-ssl
+    state: enabled
+  notify: restart apache2
+
+- name: Désactivation du site par défaut
+  apache2_site:
+    name: 000-default
+    state: disabled
+  notify: restart apache2
+
+- name: Démarrage et activation des services Zabbix
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - apache2
+
+- name: Attendre que Zabbix soit opérationnel
+  wait_for:
+    port: 80
+    delay: 10
+    timeout: 300
+
+- name: Configuration initiale via API Zabbix
+  include_tasks: zabbix_api_config.yml
