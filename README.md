@@ -1,8 +1,6 @@
-# MSPR2
+# Template Ansible - Debian 12 + Nextcloud + Zabbix + Conformité RGPD
 
-# Template Ansible - Debian 12 + Zabbix + Conformité RGPD
-
-Ce template Ansible permet de déployer automatiquement une infrastructure de monitoring basée sur Zabbix avec une configuration respectant les exigences du RGPD.
+Ce template Ansible permet de déployer automatiquement une plateforme cloud Nextcloud avec monitoring Zabbix et configuration respectant les exigences du RGPD.
 
 ## 🎯 Fonctionnalités
 
@@ -12,28 +10,48 @@ Ce template Ansible permet de déployer automatiquement une infrastructure de mo
 - Configuration timezone et locales françaises
 - Synchronisation NTP
 
+### ☁️ Nextcloud Cloud Platform
+- **Nextcloud 28** - Plateforme cloud complète
+- **Interface française** - Configuration locale par défaut
+- **Stockage sécurisé** - Chiffrement côté serveur activé
+- **Authentification 2FA** - Sécurité renforcée
+- **Redis cache** - Performance optimisée
+- **HTTPS obligatoire** - Certificats SSL auto-signés
+- **Applications RGPD** - Data Request et Privacy intégrées
+
 ### 🔐 Sécurité
 - Firewall UFW configuré
 - Fail2ban pour la protection contre les intrusions
 - Configuration SSH sécurisée
 - Audit système avec auditd
 - Mises à jour de sécurité automatiques
-- Certificats SSL auto-signés
+- Headers de sécurité HTTPS modernes
+- Politique de mots de passe renforcée
 
 ### 📊 Monitoring Zabbix
 - Zabbix Server 6.4 avec interface web
 - Base de données MySQL/MariaDB
 - Agent Zabbix configuré
 - Interface HTTPS sécurisée
-- Configuration optimisée pour la production
+- **Monitoring spécifique Nextcloud** :
+  - État du service Nextcloud
+  - Nombre d'utilisateurs actifs
+  - Utilisation du stockage
+  - Conformité RGPD (fichiers anciens)
+  - Performance de la base de données
 
 ### 🛡️ Conformité RGPD
 - Rétention automatique des données (90 jours par défaut)
-- Anonymisation des logs
-- Scripts de nettoyage automatique
+- Anonymisation des logs Apache et Nextcloud
+- Scripts de nettoyage automatique des fichiers anciens
 - Registre des traitements
 - Headers de confidentialité
-- Documentation de conformité
+- **Spécifique Nextcloud** :
+  - Nettoyage automatique de la corbeille
+  - Suppression des versions anciennes de fichiers
+  - Rotation des logs et sessions
+  - Applications RGPD natives activées
+  - Contact DPO configuré
 
 ## 📋 Prérequis
 
@@ -69,7 +87,7 @@ all:
   children:
     debian_servers:
       hosts:
-        zabbix-server:
+        nextcloud-server:
           ansible_host: 192.168.1.100  # Votre IP
           ansible_user: root
 ```
@@ -95,6 +113,7 @@ chmod +x deploy.sh
 ├── roles/
 │   ├── common/            # Configuration système de base
 │   ├── security/          # Sécurisation du système
+│   ├── nextcloud/         # Installation Nextcloud
 │   ├── zabbix-server/     # Installation Zabbix
 │   ├── gdpr-compliance/   # Conformité RGPD
 │   └── monitoring-agents/ # Agents de monitoring
@@ -109,7 +128,7 @@ Dans `group_vars/all/main.yml` :
 # Configuration de base
 timezone: "Europe/Paris"
 locale: "fr_FR.UTF-8"
-domain_name: "votre-domaine.com"
+domain_name: "cloud.votre-domaine.com"
 
 # Configuration RGPD
 log_retention_days: 90
@@ -118,6 +137,16 @@ gdpr_contact_email: "dpo@votre-domaine.com"
 # Configuration Zabbix
 zabbix_version: "6.4"
 zabbix_server_name: "Production Monitor"
+
+# Configuration Nextcloud
+nextcloud_version: "28"
+nextcloud_admin_user: "admin"
+nextcloud_domain: "cloud.votre-domaine.com"
+
+# Sécurité et performance
+nextcloud_max_file_size: "16G"
+redis_cache_enabled: true
+encryption_enabled: true
 ```
 
 ### Gestion des mots de passe
@@ -128,9 +157,17 @@ ansible-vault edit group_vars/all/vault.yml
 
 2. Modifier les mots de passe par défaut :
 ```yaml
+# Mots de passe MySQL
 vault_mysql_root_password: "VotreMotDePasseMySQL"
 vault_mysql_zabbix_password: "VotreMotDePasseZabbix"
+
+# Mots de passe Zabbix
 vault_zabbix_admin_password: "VotreMotDePasseAdmin"
+
+# Mots de passe Nextcloud
+vault_nextcloud_admin_password: "VotreMotDePasseNextcloud"
+vault_nextcloud_db_password: "VotreMotDePasseNextcloudDB"
+vault_redis_password: "VotreMotDePasseRedis"
 ```
 
 ### Déploiement par étapes
@@ -155,9 +192,18 @@ ansible-playbook -i inventory/hosts.yml site.yml --tags "zabbix"
 ansible-playbook -i inventory/hosts.yml site.yml --tags "gdpr"
 ```
 
-## 🌐 Accès à Zabbix
+## 🌐 Accès aux interfaces
 
 Après déploiement :
+
+### **Nextcloud** :
+- **URL** : https://votre-ip-serveur/
+- **Utilisateur Admin** : admin
+- **Mot de passe** : Celui défini dans vault_nextcloud_admin_password
+- **Interface** : Française par défaut
+- **Fonctionnalités** : Stockage, partage, calendrier, contacts, applications
+
+### **Zabbix** :
 - **URL** : https://votre-ip-serveur/zabbix
 - **Utilisateur** : Admin
 - **Mot de passe** : Celui défini dans vault_zabbix_admin_password
@@ -165,17 +211,27 @@ Après déploiement :
 ## 📊 Monitoring configuré
 
 ### Éléments surveillés par défaut :
-- CPU, mémoire, disque
-- Services système critiques
-- Logs d'erreurs
-- Connexions réseau
-- Processus Zabbix
+- **Système** : CPU, mémoire, disque, services
+- **Nextcloud** :
+  - État du service (disponibilité, maintenance)
+  - Nombre d'utilisateurs actifs/total
+  - Utilisation du stockage (fichiers, corbeille, versions)
+  - Conformité RGPD (fichiers anciens à nettoyer)
+  - Performance base de données et Redis
+- Logs d'erreurs système et Nextcloud
+- Processus critiques (Apache, PHP-FPM, Redis)
 
 ### Alertes configurées :
 - Utilisation CPU > 80%
 - Utilisation mémoire > 85%
 - Espace disque < 10%
 - Services critiques arrêtés
+- **Nextcloud spécifique** :
+  - Service Nextcloud indisponible
+  - Mode maintenance activé
+  - Fichiers anciens non nettoyés (conformité RGPD)
+  - Base de données trop volumineuse
+  - Erreurs dans les logs Nextcloud
 
 ## 🛡️ Fonctionnalités RGPD
 
@@ -283,3 +339,15 @@ Les contributions sont bienvenues ! Merci de :
 ---
 
 **⚠️ Important** : Ce template respecte les exigences RGPD mais une validation juridique est recommandée pour votre cas d'usage spécifique.
+
+## 🚀 **Avantages de Nextcloud vs autres solutions cloud**
+
+- ✅ **Souveraineté des données** : Vos données restent chez vous
+- ✅ **RGPD native** : Applications et fonctionnalités conformes intégrées  
+- ✅ **Interface française** : Configuration locale complète
+- ✅ **Extensible** : Plus de 300 applications disponibles
+- ✅ **Open Source** : Code ouvert, pas de vendor lock-in
+- ✅ **Monitoring intégré** : Surveillance automatique avec Zabbix
+- ✅ **Sécurité renforcée** : 2FA, chiffrement, audit automatique
+
+Votre cloud privé Nextcloud sera opérationnel en ~15 minutes ! 🎯

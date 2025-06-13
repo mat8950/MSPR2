@@ -1,0 +1,58 @@
+---
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: keycloak
+    command: start-dev
+    ports:
+      - "8082:8080"
+    environment:
+      # Database
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/${POSTGRES_DB}
+      - KC_DB_USERNAME=${POSTGRES_USER}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD}
+      
+      # Keycloak Admin
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN_USER}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      
+      # Configuration
+      - KC_HOSTNAME=${KC_HOSTNAME}
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HTTP_ENABLED=true
+      - KC_PROXY=edge
+      
+      # Logging
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
+      
+    volumes:
+      - ./data/keycloak:/opt/keycloak/data
+      - ./config:/opt/keycloak/data/import
+    depends_on:
+      - keycloak-db
+    restart: unless-stopped
+    networks:
+      - keycloak-network
+
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: keycloak-db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/keycloak-db:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - keycloak-network
+
+volumes:
+  keycloak_data:
+  keycloak_db:
+
+networks:
+  keycloak-network:
+    driver: bridge
